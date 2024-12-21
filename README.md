@@ -85,7 +85,8 @@ Follow instructions in the [Shiny Server Guide](https://rstudio.com/products/shi
 
 ## Troubleshooting
 
-Currently, the app times out when hosted on Shiny.io. It is unclear why. 
+The app currently times out when hosted on Shiny.io. It is unclear why.
+
 ---
 
 ## Example Output
