@@ -2,7 +2,7 @@ library(shiny)
 library(zip)
 
 # Function to generate a randomized packet
-function(categories) {
+generate_packet <- function(categories) {
   packet <- rep("", 20)
   used_subcategories <- list(
     History = c(),
@@ -32,7 +32,7 @@ function(categories) {
     quarter_indices <- ((q - 1) * 5 + 1):((q - 1) * 5 + 5)
     packet[quarter_indices] <- sample(packet[quarter_indices])
   }
-  
+
   # Final check for adjacency issues across ALL slots
   for (i in 1:(length(packet) - 1)) {
     while (strsplit(packet[i], ":")[[1]][1] == strsplit(packet[i + 1], ":")[[1]][1]) {
@@ -42,7 +42,7 @@ function(categories) {
       packet[quarter_start:quarter_end] <- sample(packet[quarter_start:quarter_end])
     }
   }
-  
+
   return(packet)
 }
 
@@ -68,7 +68,7 @@ generate_packet_TUandB <- function(categories) {
 # UI layout
 ui <- fluidPage(
   titlePanel("Quizbowl Packet Randomizer"),
-  
+
   # Custom CSS for fixed height and font size
   tags$style(HTML("
         #packet_output {
@@ -86,7 +86,7 @@ ui <- fluidPage(
             justify-content: space-between;
         }
     ")),
-  
+
   # Layout for input and output panels
   fluidRow(
     column(
@@ -119,7 +119,7 @@ ui <- fluidPage(
       )
     )
   ),
-  
+
   # JavaScript for clipboard functionality
   tags$script(HTML("
         function copyToClipboard(text) {
@@ -157,7 +157,7 @@ server <- function(input, output, session) {
       })
     }
   })
-  
+
   output$download_packets <- downloadHandler(
     filename = function() { paste0(input$tournament_name, "_Packets.zip") },
     content = function(file) {
