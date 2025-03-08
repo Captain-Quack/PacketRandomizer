@@ -2,43 +2,53 @@ library(shiny)
 library(zip)
 
 # Function to generate a randomized packet
-generate_packet <- function(categories) {
-  packet <- rep("", 20)
-  used_subcategories <- list(
-    History = c(),
-    Science = c(),
-    Literature = c(),
-    FineArtsOther = c(),
-    RMPSS = c()
-  )
-  for (q in 1:4) {
+generate_packet <- function(categories, n_tossups = 20) {
+  
+  # don't change this number without changing the rest of the input rules around this program. 
+  n_quarters <- 4
+  quarter_size <- n_tossups / n_quarters
+  
+  packet <- rep("", n_tossups)
+  used_subcategories <- lapply(categories, function(x) character())
+  for (q in seq_len(n_quarters)) {
     deck <- names(categories)
-    for (i in 1:5) {
+    for (i in seq_len(quarter_size)) {
       if (q > 1 && i == 1) {
-        # Enforce cross-quarter adjacency rule
-        last_category <- strsplit(packet[(q - 1) * 5], ":")[[1]][1]
+        last_category <- strsplit(packet[(q - 1) * quarter_size], ":")[[1]][1]
         deck <- setdiff(deck, last_category)
+      }
+      if (length(deck) == 0) {
+        deck <- names(categories)
+        if (q > 1 && i == 1) {
+          deck <- setdiff(deck, last_category)
+        }
       }
       # Draw a category and subcategory
       cat <- sample(deck, 1)
+      # Handle subcategories, resetting if all have been used
       available_subs <- setdiff(categories[[cat]], used_subcategories[[cat]])
+      if (length(available_subs) == 0) {
+        used_subcategories[[cat]] <- character()
+        available_subs <- categories[[cat]]
+      }
       subcat <- sample(available_subs, 1)
       used_subcategories[[cat]] <- c(used_subcategories[[cat]], subcat)
+    
       deck <- setdiff(deck, cat)
-      slot <- (q - 1) * 5 + i
-      packet[slot] <- paste(cat, ":", subcat)
+      slot <- (q - 1) * quarter_size + i
+      packet[slot] <- paste(cat, subcat, sep=":")
     }
     # Shuffle within the quarter
-    quarter_indices <- ((q - 1) * 5 + 1):((q - 1) * 5 + 5)
+    quarter_indices <- ((q - 1) * quarter_size + 1):(q*quarter_size)
     packet[quarter_indices] <- sample(packet[quarter_indices])
   }
 
   # Final check for adjacency issues across ALL slots
-  for (i in 1:(length(packet) - 1)) {
+  for (i in seq_len(n_tossups-1)) {
     while (strsplit(packet[i], ":")[[1]][1] == strsplit(packet[i + 1], ":")[[1]][1]) {
       # Swap with a random position in the same quarter to resolve adjacency
-      quarter_start <- ((i - 1) %/% 5) * 5 + 1
-      quarter_end <- quarter_start + 4
+      quarter_start <- ((i - 1) %/% quarter_size) * quarter_size + 1
+      quarter_end <- quarter_start + quarter_size - 1
       packet[quarter_start:quarter_end] <- sample(packet[quarter_start:quarter_end])
     }
   }
@@ -47,23 +57,24 @@ generate_packet <- function(categories) {
 }
 
 # Wrapper function for TU and B lists
-generate_packet_TUandB <- function(categories) {
-  TU <- generate_packet(categories)
-  B <- generate_packet(categories)
-  for (q in 1:4) {
-    quarter_indices <- ((q - 1) * 5 + 1):((q - 1) * 5 + 5)
-    for (i in quarter_indices) {
+generate_packet_TUandB <- function(categories, n_tossups) {
+  TU <- generate_packet(categories, n_tossups)
+  B <- generate_packet(categories, n_tossups)
+  for (i in seq_len(n_tossups)) {
       while (strsplit(TU[i], ":")[[1]][2] == strsplit(B[i], ":")[[1]][2]) {
-        B[quarter_indices] <- sample(B[quarter_indices])
+        B <- sample(B) 
+        #  I was going to figure out how to shuffle just the relevant 
+        # quarters like the old version does, but I don't know enough R for that 
+        # ¯\_(ツ)_/¯ - Mason 
       }
-    }
   }
   formatted_packet <- c(
-    paste0("TU", 1:20, ". ", TU),
-    paste0("B", 1:20, ". ", B)
+    paste0("TU", seq_len(n_tossups), ". ", TU),
+    paste0("B",  seq_len(n_tossups), ". ", B)
   )
   return(formatted_packet)
 }
+
 
 # UI layout
 ui <- fluidPage(
@@ -93,12 +104,13 @@ ui <- fluidPage(
       width = 5,
       wellPanel(
         h3("Generate Single Packet"),
-        p("Each category must have exactly four subcategories, separated by commas (e.g., 'American, European, Other, World')."),
-        textInput("history", "History (comma-separated)", "American,European,Other,World"),
-        textInput("science", "Science (comma-separated)", "Biology,Chemistry,Physics,Other"),
-        textInput("literature", "Literature (comma-separated)", "American,British,Euro/Ancient,World"),
-        textInput("finearts", "Fine Arts & Other (comma-separated)", "Painting/Sculpture,Music,Other,Geo/CE/Other"),
-        textInput("rmpss", "RMPSS (comma-separated)", "Religion,Mythology,Philosophy,Social Science"),
+        numericInput("num_tossups", "Number of Tossups (rounded down to a multiple of four):", value = 20, min = 1),
+        p("Enter four or more subcategories per subject. Seperate subcategories by commas."),
+        textInput("history", "History", "American,European,Other,World"),
+        textInput("science", "Science", "Biology,Chemistry,Physics,Other"),
+        textInput("literature", "Literature", "American,British,Euro/Ancient,World"),
+        textInput("finearts", "Fine Arts & Other", "Painting/Sculpture,Music,Other,Geo/CE/Other"),
+        textInput("rmpss", "RMPSS", "Religion,Mythology,Philosophy,Social Science"),
         actionButton("randomize", "Display Single Packet")
       ),
       wellPanel(
@@ -138,6 +150,14 @@ ui <- fluidPage(
 
 # Server logic
 server <- function(input, output, session) {
+  observeEvent(input$num_tossups, {
+    adjusted_tossups <- input$num_tossups - (input$num_tossups %% 4)
+    
+    if (input$num_tossups %% 4 != 0) {
+      updateNumericInput(session, "num_tossups", value = adjusted_tossups)
+    }
+  }, ignoreInit = TRUE)
+  
   observeEvent(input$randomize, {
     categories <- list(
       History = strsplit(input$history, ",")[[1]],
@@ -146,39 +166,21 @@ server <- function(input, output, session) {
       FineArtsOther = strsplit(input$finearts, ",")[[1]],
       RMPSS = strsplit(input$rmpss, ",")[[1]]
     )
-    valid_input <- all(sapply(categories, length) == 4)
+    
+    valid_input <- all(sapply(categories, length) >= 4)
     if (!valid_input) {
-      output$packet_output <- renderText("Error: Each category must have exactly 4 subcategories.")
-    } else {
-      packet <- generate_packet_TUandB(categories)
-      output$packet_output <- renderPrint({ cat(packet, sep = "\n") })
-      observeEvent(input$copy, {
-        session$sendCustomMessage("copyText", paste(packet, collapse = "\n"))
-      })
-    }
+      output$packet_output <- renderText("Error: Each category must have at least 4 subcategories.")
+      return() 
+    } 
+    
+    packet <- generate_packet_TUandB(categories, input$num_tossups)
+    output$packet_output <- renderPrint({ cat(packet, sep = "\n") })
+    
+    observeEvent(input$copy, {
+      session$sendCustomMessage("copyText", paste(packet, collapse = "\n"))
+    })
   })
-
-  output$download_packets <- downloadHandler(
-    filename = function() { paste0(input$tournament_name, "_Packets.zip") },
-    content = function(file) {
-      temp_dir <- file.path(tempdir(), "quizbowl_packets")
-      unlink(temp_dir, recursive = TRUE)
-      dir.create(temp_dir, showWarnings = FALSE)
-      categories <- list(
-        History = strsplit(input$history, ",")[[1]],
-        Science = strsplit(input$science, ",")[[1]],
-        Literature = strsplit(input$literature, ",")[[1]],
-        FineArtsOther = strsplit(input$finearts, ",")[[1]],
-        RMPSS = strsplit(input$rmpss, ",")[[1]]
-      )
-      for (i in 1:input$num_packets) {
-        packet <- generate_packet_TUandB(categories)
-        writeLines(packet, file.path(temp_dir, paste0(input$tournament_name, " - Packet ", i, ".txt")))
-      }
-      zip::zipr(file, files = list.files(temp_dir, full.names = TRUE))
-    },
-    contentType = "application/zip"
-  )
 }
+
 
 shinyApp(ui = ui, server = server)
